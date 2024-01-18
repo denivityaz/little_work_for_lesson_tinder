@@ -1,29 +1,24 @@
-— Создание таблиц
 CREATE TABLE Users (
 user_id SERIAL PRIMARY KEY,
 username VARCHAR(50) NOT NULL,
 age INTEGER,
-gender VARCHAR(10),
-— Другие данные профиля
+gender VARCHAR(10)
 );
 
 CREATE TABLE Reactions (
 reaction_id SERIAL PRIMARY KEY,
 user_id INTEGER REFERENCES Users(user_id),
 target_user_id INTEGER REFERENCES Users(user_id),
-reaction_type VARCHAR(10) CHECK (reaction_type IN ('like', 'dislike')),
-— Другие данные о реакции
+reaction_type VARCHAR(10) CHECK (reaction_type IN ('like', 'dislike'))
 );
 
 CREATE TABLE Meetings (
 meeting_id SERIAL PRIMARY KEY,
 user1_id INTEGER REFERENCES Users(user_id),
 user2_id INTEGER REFERENCES Users(user_id),
-meeting_date DATE,
-— Другие данные о встрече
+meeting_date DATE
 );
 
-— Создание функций
 CREATE OR REPLACE FUNCTION create_matching_pairs()
 RETURNS VOID AS $$
 BEGIN
@@ -38,7 +33,7 @@ FROM Meetings m
 WHERE (m.user1_id = r1.user_id AND m.user2_id = r1.target_user_id)
 OR (m.user1_id = r1.target_user_id AND m.user2_id = r1.user_id)
 );
-END;
+END
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION assign_meeting_dates()
@@ -52,5 +47,5 @@ UPDATE Meetings
 SET meeting_date = CURRENT_DATE + row_num - 1
 FROM RankedMeetings
 WHERE Meetings.meeting_id = RankedMeetings.meeting_id;
-END;
+END
 $$ LANGUAGE plpgsql;
