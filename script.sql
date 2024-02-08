@@ -1,51 +1,91 @@
-CREATE TABLE Users (
-user_id SERIAL PRIMARY KEY,
-username VARCHAR(50) NOT NULL,
-age INTEGER,
-gender VARCHAR(10)
+--таблица профилей с дополнительным полем для удаления профиля
+CREATE TABLE profiles (
+    id SERIAL PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    sex INTEGER,
+    is_deleted BOOLEAN DEFAULT FALSE
 );
 
-CREATE TABLE Reactions (
-reaction_id SERIAL PRIMARY KEY,
-user_id INTEGER REFERENCES Users(user_id),
-target_user_id INTEGER REFERENCES Users(user_id),
-reaction_type VARCHAR(10) CHECK (reaction_type IN ('like', 'dislike'))
+-- таблица событий с внешними ключами и индексом
+CREATE TABLE events (
+    id SERIAL PRIMARY KEY,
+    profile_from INTEGER NOT NULL,
+    profile_to INTEGER NOT NULL,
+    status INTEGER NOT NULL,
+    FOREIGN KEY (profile_from) REFERENCES profiles(id) ON DELETE CASCADE,
+    FOREIGN KEY (profile_to) REFERENCES profiles(id) ON DELETE CASCADE,
+    CONSTRAINT unique_event_pair UNIQUE (profile_from, profile_to)
 );
 
-CREATE TABLE Meetings (
-meeting_id SERIAL PRIMARY KEY,
-user1_id INTEGER REFERENCES Users(user_id),
-user2_id INTEGER REFERENCES Users(user_id),
-meeting_date DATE
+--таблица пар с ограничением уникальности и триггером для предотвращения перекрестных значений
+CREATE TABLE pairs (
+    id SERIAL PRIMARY KEY,
+    profile1 INTEGER NOT NULL,
+    profile2 INTEGER NOT NULL,
+    slot INTEGER,
+    FOREIGN KEY (profile1) REFERENCES profiles(id),
+    FOREIGN KEY (profile2) REFERENCES profiles(id),
+    CONSTRAINT unique_profile_pair UNIQUE (LEAST(profile1, profile2), GREATEST(profile1, profile2))
 );
 
-CREATE OR REPLACE FUNCTION create_matching_pairs()
-RETURNS VOID AS $$
+--триггер для проверки перекрестных значений
+CREATE OR REPLACE FUNCTION prevent_cross_pairs()
+RETURNS TRIGGER AS $$
 BEGIN
-INSERT INTO Meetings (user1_id, user2_id, meeting_date)
-SELECT r1.user_id, r1.target_user_id, CURRENT_DATE
-FROM Reactions r1
-JOIN Reactions r2 ON r1.user_id = r2.target_user_id AND r1.target_user_id = r2.user_id
-WHERE r1.reaction_type = 'like' AND r2.reaction_type = 'like'
-AND NOT EXISTS (
-SELECT 1
-FROM Meetings m
-WHERE (m.user1_id = r1.user_id AND m.user2_id = r1.target_user_id)
-OR (m.user1_id = r1.target_user_id AND m.user2_id = r1.user_id)
-);
-END
+    IF EXISTS (
+        SELECT 1 FROM pairs
+        WHERE (NEW.profile1 = profile2 AND NEW.profile2 = profile1)
+    ) THEN
+        RAISE EXCEPTION 'Crossed profile pair not allowed';
+    END IF;
+    RETURN NEW;
+END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION assign_meeting_dates()
-RETURNS VOID AS $$
-BEGIN
-WITH RankedMeetings AS (
-SELECT meeting_id, ROW_NUMBER() OVER (PARTITION BY meeting_date ORDER BY meeting_id) as row_num
-FROM Meetings
-)
-UPDATE Meetings
-SET meeting_date = CURRENT_DATE + row_num - 1
-FROM RankedMeetings
-WHERE Meetings.meeting_id = RankedMeetings.meeting_id;
-END
-$$ LANGUAGE plpgsql;
+CREATE TRIGGER check_cross_pairs
+BEFORE INSERT ON pairs
+FOR EACH ROW
+EXECUTE FUNCTION prevent_cross_pairs();
+
+insert into profiles (first_name, last_name, sex) values
+('1', '2', 0),
+('3', '4', 1),
+('6', '5', null),
+('7', '6', null),
+('9', '10', 0),
+('11', '12', 0),
+('13', '14', 1),
+('15', '16', 1),
+('17', '18', 0),
+('18', '19', 1);
+
+insert into events (profile_from, profile_to, status) values
+(1, 2, 1),
+(1, 5, 1),
+(2, 1, 1),
+(2, 5, 1),
+(2, 7, 1),
+(2, 3, 0),
+(3, 9, 1),
+(5, 1, 0),
+(5, 2, 1),
+(5, 6, 1),
+(5, 8, 1),
+(6, 8, 1),
+(6, 5, 0),
+(6, 7, 1),
+(6, 10, 1),
+(7, 3, 0),
+(7, 9, 1),
+(7, 10, 0),
+(7, 6, 1),
+(7, 5, 1),
+(8, 1, 1),
+(8, 5, 1),
+(8, 6, 1),
+(9, 3, 0),
+(9, 10, 1),
+(10, 7, 1),
+(10, 9, 1),
+(10, 6, 1);
